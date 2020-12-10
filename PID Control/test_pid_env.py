@@ -1,7 +1,7 @@
-from stable_baselines3.common.env_checker import check_env
-from pid_control_env import GymNonLinearTankPID
 import matplotlib.pyplot as plt
 import numpy as np
+from pid_control_env import GymNonLinearTankPID
+from stable_baselines3.common.env_checker import check_env
 
 env = GymNonLinearTankPID()
 check_env(env, warn=True)

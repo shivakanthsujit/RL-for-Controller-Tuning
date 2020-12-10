@@ -1,11 +1,11 @@
-import numpy as np
-import gym
-from gym import spaces
 import control
-from control.matlab import *
+import gym
 import matplotlib.pyplot as plt
-from numpy.linalg import inv
+import numpy as np
+from control.matlab import c2d, ss, ssdata, tf
 from dmc_utils import dmccalc, smatgen
+from gym import spaces
+from scipy.integrate import solve_ivp
 
 
 class Reactor:
@@ -23,17 +23,13 @@ class Reactor:
         self.t = np.arange(0, self.tfinal + self.delt, self.delt)  # time vector
         self.kfinal = len(self.t)  # number of time intervals
         self.ksp = int(self.timesp / self.delt)
-        self.r = np.append(
-            np.zeros((self.ksp, 1)), np.ones((self.kfinal - self.ksp, 1)) * self.ysp
-        )  # setpoint vector
+        self.r = np.append(np.zeros((self.ksp, 1)), np.ones((self.kfinal - self.ksp, 1)) * self.ysp)  # setpoint vector
 
         """
     ----- insert continuous model here -----------
     model (continuous state space form)
     """
-        self.a = np.array([[-2.4048, 0], [0.8333, -2.2381]]).reshape(
-            2, 2
-        )  # a matrix � van de vusse
+        self.a = np.array([[-2.4048, 0], [0.8333, -2.2381]]).reshape(2, 2)  # a matrix � van de vusse
         self.b = np.array([[7], [-1.117]]).reshape(2, 1)  # b matrix � van de vusse
         self.c = np.array([0, 1]).reshape(1, 2)  # c matrix � van de vusse
         self.d = np.array([0]).reshape(1, 1)  # d matrix � van de vusse
@@ -68,9 +64,7 @@ class Reactor:
 
         #  initialize input vector
         self.u = np.zeros((self.kfinal + 1, 1))
-        self.u[: min(self.p, self.kfinal)] = (
-            np.ones((min(self.p, self.kfinal), 1)) * self.uinit
-        )
+        self.u[: min(self.p, self.kfinal)] = np.ones((min(self.p, self.kfinal), 1)) * self.uinit
 
         self.dup = np.zeros((self.n - 2, 1))
         self.sn = self.s[self.n - 1]  # last step response coefficient
@@ -107,39 +101,28 @@ class Reactor:
             self.u[self.k] = self.uinit + self.du[self.k]
 
         #  plant equations
-        self.x[self.k + 1] = (
-            np.matmul(self.phi, self.x[self.k])
-            + np.matmul(self.gamma, self.u[self.k]).T
-        )
+        self.x[self.k + 1] = np.matmul(self.phi, self.x[self.k]) + np.matmul(self.gamma, self.u[self.k]).T
         self.y[self.k + 1] = np.matmul(self.cd, self.x[self.k + 1])
         #  model prediction
         if self.k - self.n + 1 >= 0:
             self.ymod[self.k + 1] = (
-                self.s[0] * self.du[self.k]
-                + np.matmul(Sp[0, :], self.dup)
-                + self.sn * self.u[self.k - self.n + 1]
+                self.s[0] * self.du[self.k] + np.matmul(Sp[0, :], self.dup) + self.sn * self.u[self.k - self.n + 1]
             )
         else:
-            self.ymod[self.k + 1] = self.s[0] * self.du[self.k] + np.matmul(
-                Sp[0, :], self.dup
-            )
+            self.ymod[self.k + 1] = self.s[0] * self.du[self.k] + np.matmul(Sp[0, :], self.dup)
 
         #  disturbance compensation
         self.dist[self.k + 1] = self.y[self.k + 1] - self.ymod[self.k + 1]
         #  additive disturbance assumption
         #  put input change into vector of past control moves
-        self.dup = (np.append(self.du[self.k], self.dup[: self.n - 3])).reshape(
-            self.n - 2, 1
-        )
+        self.dup = (np.append(self.du[self.k], self.dup[: self.n - 3])).reshape(self.n - 2, 1)
         self.k = self.k + 1
         return self.r[self.k], self.y[self.k][0]
 
     def reset(self):
         #  initialize input vector
         self.u = np.zeros((self.kfinal + 1, 1))
-        self.u[: min(self.p, self.kfinal)] = (
-            np.ones((min(self.p, self.kfinal), 1)) * self.uinit
-        )
+        self.u[: min(self.p, self.kfinal)] = np.ones((min(self.p, self.kfinal), 1)) * self.uinit
 
         self.dup = np.zeros((self.n - 2, 1))
         self.sn = self.s[self.n - 1]  # last step response coefficient
@@ -162,9 +145,7 @@ class Reactor:
         else:
             plt.figure(figsize=(16, 16))
             plt.subplot(2, 1, 1)
-            plt.step(
-                self.t[: self.k], self.r[: self.k], linestyle="dashed", label="Setpoint"
-            )
+            plt.step(self.t[: self.k], self.r[: self.k], linestyle="dashed", label="Setpoint")
             plt.plot(self.t[: self.k], self.y[: self.k], label="Plant Output")
             plt.ylabel("y")
             plt.xlabel("time")
@@ -184,14 +165,12 @@ class Reactor:
 
 class GymReactor(gym.Env):
     def __init__(self):
-        super(GymReactor, self).__init__()
+        super().__init__()
 
         # Only one action, to choose the weights
         n_actions = 1
-        self.action_space = spaces.Box(-1.0, 1.0, (1,))
-        self.observation_space = spaces.Box(
-            low=-10.0, high=10.0, shape=(2,), dtype=np.float32
-        )
+        self.action_space = spaces.Box(-1.0, 1.0, (n_actions,))
+        self.observation_space = spaces.Box(low=-10.0, high=10.0, shape=(2,), dtype=np.float32)
         self.reactor = Reactor()
 
     def reset(self):
@@ -287,9 +266,7 @@ class NonLinearTank:
             return
         Sf, Sp, Kmat = smatgen(self.s, self.p, self.m, self.n, weight)
         R = self.r[self.k] - self.ybar
-        self.dU[self.k] = dmccalc(
-            Sp, Kmat, self.sn, self.dUp, self.dist[self.k], R, self.U, self.k, self.n
-        )
+        self.dU[self.k] = dmccalc(Sp, Kmat, self.sn, self.dUp, self.dist[self.k], R, self.U, self.k, self.n)
 
         #  perform control calculation
         if self.k > 0:
@@ -298,31 +275,23 @@ class NonLinearTank:
             self.U[self.k] = self.uinit + self.dU[self.k]
 
         self.u[self.k] = self.U[self.k] + self.ubar
-        sol = solve_ivp(
-            self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], [self.ss_s1]
-        )
+        sol = solve_ivp(self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], [self.ss_s1])
         self.ss_s1 = sol.y[0][-1]
         self.y[self.k + 1] = self.ss_s1
         self.Y[self.k + 1] = self.y[self.k + 1] - self.ybar
         #  model prediction
         if self.k - self.n + 1 >= 0:
             self.Ymod[self.k + 1] = (
-                self.s[0] * self.dU[self.k]
-                + np.matmul(Sp[0, :], self.dUp)
-                + self.sn * self.U[self.k - self.n + 1]
+                self.s[0] * self.dU[self.k] + np.matmul(Sp[0, :], self.dUp) + self.sn * self.U[self.k - self.n + 1]
             )
         else:
-            self.Ymod[self.k + 1] = self.s[0] * self.dU[self.k] + np.matmul(
-                Sp[0, :], self.dUp
-            )
+            self.Ymod[self.k + 1] = self.s[0] * self.dU[self.k] + np.matmul(Sp[0, :], self.dUp)
 
         #  disturbance compensation
         self.dist[self.k + 1] = self.Y[self.k + 1] - self.Ymod[self.k + 1]
         #  additive disturbance assumption
         #  put input change into vector of past control moves
-        self.dUp = (np.append(self.dU[self.k], self.dUp[: self.n - 3])).reshape(
-            self.n - 2, 1
-        )
+        self.dUp = (np.append(self.dU[self.k], self.dUp[: self.n - 3])).reshape(self.n - 2, 1)
         self.tinitial = self.tfinal
         self.tfinal += self.delt
         self.k = self.k + 1
@@ -419,15 +388,13 @@ class NonLinearTank:
 
 class GymNonLinearTank(gym.Env):
     def __init__(self, deterministic=False, ubar=16, ybar=4, A=3, ysp=10, timesp=1):
-        super(GymNonLinearTank, self).__init__()
+        super().__init__()
 
         self.system = NonLinearTank()
 
         n_actions = 1
-        self.action_space = spaces.Box(-1.0, 1.0, (1,))
-        self.observation_space = spaces.Box(
-            low=-100.0, high=100.0, shape=(2,), dtype=np.float32
-        )
+        self.action_space = spaces.Box(-1.0, 1.0, (n_actions,))
+        self.observation_space = spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32)
 
         self.deterministic = deterministic
         self.ubar = ubar

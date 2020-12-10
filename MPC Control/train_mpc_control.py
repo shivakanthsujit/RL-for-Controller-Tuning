@@ -1,20 +1,20 @@
-import torch
-from stable_baselines3 import PPO, A2C
-from stable_baselines3.common.cmd_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
-from stable_baselines3.common.callbacks import (
-    CheckpointCallback,
-    EvalCallback,
-    CallbackList,
-)
-from pid_control_env import GymNonLinearTankPID
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from mpc_control_env import GymNonLinearTank
+from stable_baselines3 import A2C, PPO
+from stable_baselines3.common.callbacks import (
+    CallbackList,
+    CheckpointCallback,
+    EvalCallback,
+)
+from stable_baselines3.common.cmd_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
 
 torch.autograd.set_detect_anomaly(True)
 tag_name = "baseline"
 checkpoint_callback = CheckpointCallback(10000, "./models", tag_name)
-eval_env = GymNonLinearTankPID(disturbance=True)
+eval_env = GymNonLinearTank(disturbance=True)
 eval_env = DummyVecEnv([lambda: eval_env])
 eval_env = VecCheckNan(eval_env, raise_exception=True)
 eval_callback = EvalCallback(
@@ -28,14 +28,14 @@ eval_callback = EvalCallback(
 )
 
 callback = CallbackList([checkpoint_callback, eval_callback])
-env = GymNonLinearTankPID(disturbance=True)
+env = GymNonLinearTank(disturbance=True)
 env = make_vec_env(lambda: env, n_envs=5)
 env = VecCheckNan(env, raise_exception=True)
 model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./tensorboard/")
 
 model.learn(1000000, reset_num_timesteps=False, callback=callback, tb_log_name=tag_name)
 
-test_env = GymNonLinearTankPID(deterministic=True, disturbance=True)
+test_env = GymNonLinearTank(deterministic=True, disturbance=True)
 obs = test_env.reset()
 actions = []
 agent_actions = []

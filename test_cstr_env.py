@@ -1,6 +1,8 @@
-from stable_baselines3.common.env_checker import check_env
-from cstr_control_env import GymCSTRPID
 import matplotlib.pyplot as plt
+import numpy as np
+from stable_baselines3.common.env_checker import check_env
+
+from cstr_control_env import GymCSTRPID
 
 env = GymCSTRPID()
 check_env(env, warn=True)
@@ -42,8 +44,6 @@ labels = ["Qc", "Y", "T", "R"]
 plt.figure(figsize=(16, 16))
 for i in range(4):
     plt.subplot(2, 2, i + 1)
-    plt.plot(
-        np.arange(len(np.array(obss)[:, i])), np.array(obss)[:, i], label=labels[i]
-    )
+    plt.plot(np.arange(len(np.array(obss)[:, i])), np.array(obss)[:, i], label=labels[i])
     plt.legend()
     plt.grid()

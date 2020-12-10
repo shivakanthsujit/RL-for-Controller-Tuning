@@ -1,3 +1,7 @@
+import numpy as np
+from numpy.linalg import inv
+
+
 def dmccalc(Sp, Kmat, sn, delup, d, r, u, k, n):
     """
     for use with dmcsim.m
@@ -49,7 +53,5 @@ def smatgen(s, p, m, n, w):
         Sp[i, :] = np.append(np.transpose(s[i + 1 : n - 1]), np.zeros((1, i)))
 
     #  find the feedback gain matrix, Kmat
-    Kmat = np.matmul(
-        inv(np.matmul(np.transpose(Sf), Sf) + w * np.eye(m)), np.transpose(Sf)
-    )
+    Kmat = np.matmul(inv(np.matmul(np.transpose(Sf), Sf) + w * np.eye(m)), np.transpose(Sf))
     return Sf, Sp, Kmat

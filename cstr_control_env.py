@@ -1,12 +1,9 @@
-import numpy as np
-import matplotlib.pyplot as plt
-
-import gym
-from gym import spaces
-
 import control
+import gym
+import matplotlib.pyplot as plt
+import numpy as np
 from control.matlab import *
-
+from gym import spaces
 from scipy.integrate import solve_ivp
 
 ubar = 105
@@ -27,8 +24,9 @@ class CSTRPID:
         delt=delt,
         ttfinal=20,
         disturbance=True,
+        deterministic=False,
     ):
-        self.reset_init(ubar, T, ybar, ysp, timesp, delt, ttfinal, disturbance)
+        self.reset_init(ubar, T, ybar, ysp, timesp, delt, ttfinal, disturbance, deterministic)
 
     def reset_init(
         self,
@@ -40,6 +38,7 @@ class CSTRPID:
         delt=delt,
         ttfinal=20,
         disturbance=True,
+        deterministic=False,
     ):
         self.ubar = ubar
         self.ybar = 0.1
@@ -50,15 +49,24 @@ class CSTRPID:
         self.ttfinal = ttfinal  # final simulation time
 
         self.ksp = 10
-        #       self.r = np.concatenate((np.ones((self.ksp, 1))*0.1, np.ones((40, 1))*0.11, np.ones((30, 1))*0.09, np.ones((40, 1))*0.1))
-        self.r = np.concatenate(
-            (
-                np.ones((self.ksp, 1)) * 0.1,
-                np.ones((40, 1)) * np.random.uniform(0.11, 0.14),
-                np.ones((30, 1)) * np.random.uniform(0.07, 0.10),
-                np.ones((40, 1)) * np.random.uniform(0.08, 0.11),
+        if deterministic:
+            self.r = np.concatenate(
+                (
+                    np.ones((self.ksp, 1)) * 0.1,
+                    np.ones((40, 1)) * 0.11,
+                    np.ones((30, 1)) * 0.09,
+                    np.ones((40, 1)) * 0.1,
+                )
             )
-        )
+        else:
+            self.r = np.concatenate(
+                (
+                    np.ones((self.ksp, 1)) * 0.1,
+                    np.ones((40, 1)) * np.random.uniform(0.11, 0.14),
+                    np.ones((30, 1)) * np.random.uniform(0.07, 0.10),
+                    np.ones((40, 1)) * np.random.uniform(0.08, 0.11),
+                )
+            )
         self.ttfinal = len(self.r) * self.delt
         self.tt = np.arange(0, self.ttfinal, self.delt)  # time vector
         self.kfinal = len(self.tt)  # number of time intervals
@@ -117,12 +125,7 @@ class CSTRPID:
                 f2 = (
                     (q / V * (To - T))
                     - ((((-delH) * ko * Ca) / (rho * Cp)) * np.exp(-AE / T))
-                    + (
-                        ((rhoc * Cpc) / (rho * Cp * V))
-                        * qc
-                        * (1 - np.exp(-hA / (qc * rho * Cp)))
-                        * (Tco - T)
-                    )
+                    + (((rhoc * Cpc) / (rho * Cp * V)) * qc * (1 - np.exp(-hA / (qc * rho * Cp))) * (Tco - T))
                 )
             except RuntimeWarning:
                 print("qc: ", qc)
@@ -143,20 +146,15 @@ class CSTRPID:
             self.E[self.k]
             - self.E[self.k - 1]
             + (self.delt / tau_i) * self.E[self.k]
-            + (tau_d / self.delt)
-            * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
+            + (tau_d / self.delt) * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
         )
-        self.dU[self.k] = np.clip(
-            self.dU[self.k], self.dU[self.k - 1] - 5, self.dU[self.k - 1] + 5
-        )
+        self.dU[self.k] = np.clip(self.dU[self.k], self.dU[self.k - 1] - 5, self.dU[self.k - 1] + 5)
         self.U[self.k] = self.U[self.k - 1] + self.dU[self.k]
         w = 0.05 * np.random.randn() if self.disturbance else 0.0
         d = 0.05 if self.k >= 80 else 0.0
         self.u[self.k] = self.U[self.k] + self.ubar + w + d
         self.u[self.k] = np.maximum(1e-4, self.u[self.k])
-        sol = solve_ivp(
-            self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], self.ss_s1
-        )
+        sol = solve_ivp(self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], self.ss_s1)
         self.ss_s1[0] = sol.y[0][-1]
         self.ss_s1[1] = sol.y[1][-1]
         self.m[self.k] = self.get_model_region()
@@ -240,12 +238,10 @@ class GymCSTRPID(gym.Env):
         timesp=1,
         disturbance=True,
     ):
-        super(GymCSTRPID, self).__init__()
+        super().__init__()
         n_actions = 3
         self.action_space = spaces.Box(-1.0, 1.0, (n_actions,))
-        self.observation_space = spaces.Box(
-            low=-1000.0, high=1000.0, shape=(4,), dtype=np.float32
-        )
+        self.observation_space = spaces.Box(low=-1000.0, high=1000.0, shape=(4,), dtype=np.float32)
         self.deterministic = deterministic
         self.ubar = ubar
         self.ybar = ybar
@@ -276,9 +272,7 @@ class GymCSTRPID(gym.Env):
             self.ybar = np.random.uniform(0.09, 0.13)
             self.ysp = np.random.uniform(0.1, 0.14)
             self.timesp = np.random.randint(1, 4)
-            _ = self.system.reset_init(
-                ubar=self.ubar, ybar=self.ybar, ysp=self.ysp, timesp=self.timesp
-            )
+            _ = self.system.reset_init(ubar=self.ubar, ybar=self.ybar, ysp=self.ysp, timesp=self.timesp)
         else:
             _ = self.system.reset()
         obs = self.convert_state()

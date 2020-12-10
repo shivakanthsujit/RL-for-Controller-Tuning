@@ -1,15 +1,16 @@
-from stable_baselines3 import PPO, A2C  # DQN coming soon
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan, VecNormalize
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from stable_baselines3 import A2C, PPO  # DQN coming soon
 from stable_baselines3.common.callbacks import (
+    CallbackList,
     CheckpointCallback,
     EvalCallback,
-    CallbackList,
 )
-import torch
-import matplotlib.pyplot as plt
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan, VecNormalize
+
 from cstr_control_env import GymCSTRPID
-import numpy as np
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -74,8 +75,6 @@ labels = ["Qc", "Model Number", "T", "R"]
 plt.figure(figsize=(16, 16))
 for i in range(1):
     plt.subplot(2, 2, i + 1)
-    plt.plot(
-        np.arange(len(np.array(obss)[:, i])), np.array(obss)[:, i], label=labels[i]
-    )
+    plt.plot(np.arange(len(np.array(obss)[:, i])), np.array(obss)[:, i], label=labels[i])
     plt.legend()
     plt.grid()

@@ -1,15 +1,15 @@
-import torch
-from stable_baselines3 import PPO, A2C
-from stable_baselines3.common.cmd_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
-from stable_baselines3.common.callbacks import (
-    CheckpointCallback,
-    EvalCallback,
-    CallbackList,
-)
-from pid_control_env import GymNonLinearTankPID
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+from pid_control_env import GymNonLinearTankPID
+from stable_baselines3 import A2C, PPO
+from stable_baselines3.common.callbacks import (
+    CallbackList,
+    CheckpointCallback,
+    EvalCallback,
+)
+from stable_baselines3.common.cmd_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
 
 torch.autograd.set_detect_anomaly(True)
 tag_name = "baseline"

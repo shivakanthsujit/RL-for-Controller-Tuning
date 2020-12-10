@@ -1,11 +1,11 @@
-from scipy.integrate import solve_ivp
-import numpy as np
-import gym
-from gym import spaces
 import control
-from control.matlab import *
+import gym
 import matplotlib.pyplot as plt
+import numpy as np
+from control.matlab import c2d, ssdata, tf, tf2ss
+from gym import spaces
 from numpy.linalg import inv
+from scipy.integrate import solve_ivp
 
 
 class LinearTankPID:
@@ -73,9 +73,7 @@ class LinearTankPID:
         self.du = np.zeros((self.kfinal, 1))
 
         self.x = np.zeros((self.kfinal + 1, self.sysd_plant.A.shape[0], 1))
-        self.x[: self.ksp] = np.repeat(np.array(self.xinit), self.ksp).reshape(
-            self.ksp, self.sysd_plant.A.shape[0], 1
-        )
+        self.x[: self.ksp] = np.repeat(np.array(self.xinit), self.ksp).reshape(self.ksp, self.sysd_plant.A.shape[0], 1)
 
         self.y = np.zeros((self.kfinal + 1, 1))
         self.y[: self.ksp] = np.ones((self.ksp, 1)) * self.yinit
@@ -97,12 +95,9 @@ class LinearTankPID:
             self.E[self.k]
             - self.E[self.k - 1]
             + (self.delt / (tau_i)) * self.E[self.k]
-            + (tau_d / self.delt)
-            * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
+            + (tau_d / self.delt) * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
         )
-        self.du[self.k] = np.clip(
-            self.du[self.k], self.du[self.k - 1] - 400, self.du[self.k - 1] + 400
-        )
+        self.du[self.k] = np.clip(self.du[self.k], self.du[self.k - 1] - 400, self.du[self.k - 1] + 400)
 
         self.u[self.k] = self.u[self.k - 1] + self.du[self.k]
 
@@ -112,10 +107,7 @@ class LinearTankPID:
         self.u[self.k] = self.u[self.k] + w + d
 
         #  plant equations
-        self.x[self.k + 1] = (
-            np.matmul(self.phi, self.x[self.k])
-            + np.matmul(self.gamma, self.u[self.k]).T
-        )
+        self.x[self.k + 1] = np.matmul(self.phi, self.x[self.k]) + np.matmul(self.gamma, self.u[self.k]).T
         self.y[self.k + 1] = np.matmul(self.cd, self.x[self.k + 1])
 
         self.tinitial = self.tfinal
@@ -248,19 +240,14 @@ class NonLinearTankPID:
             self.E[self.k]
             - self.E[self.k - 1]
             + (self.delt / tau_i) * self.E[self.k]
-            + (tau_d / self.delt)
-            * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
+            + (tau_d / self.delt) * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
         )
-        self.du[self.k] = np.clip(
-            self.du[self.k], self.du[self.k - 1] - 400, self.du[self.k - 1] + 400
-        )
+        self.du[self.k] = np.clip(self.du[self.k], self.du[self.k - 1] - 400, self.du[self.k - 1] + 400)
         self.U[self.k] = self.U[self.k - 1] + self.dU[self.k]
         w = 0.05 * np.random.randn() if self.disturbance else 0.0
         d = 0.05 if self.k >= 80 else 0.0
         self.u[self.k] = self.U[self.k] + self.ubar + w + d
-        sol = solve_ivp(
-            self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], [self.ss_s1]
-        )
+        sol = solve_ivp(self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], [self.ss_s1])
         self.ss_s1 = sol.y[0][-1]
         self.y[self.k + 1] = self.ss_s1
         self.Y[self.k + 1] = self.y[self.k + 1] - self.ybar
@@ -307,12 +294,6 @@ class NonLinearTankPID:
         return ((self.r[: self.k] - np.squeeze(self.y[: self.k])) ** 2).sum()
 
 
-import numpy as np
-import gym
-from gym import spaces
-import control
-
-
 class GymNonLinearTankPID(gym.Env):
     def __init__(
         self,
@@ -324,12 +305,10 @@ class GymNonLinearTankPID(gym.Env):
         timesp=1,
         disturbance=False,
     ):
-        super(GymNonLinearTankPID, self).__init__()
+        super().__init__()
         n_actions = 3
         self.action_space = spaces.Box(-1.0, 1.0, (n_actions,))
-        self.observation_space = spaces.Box(
-            low=-100.0, high=100.0, shape=(2,), dtype=np.float32
-        )
+        self.observation_space = spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32)
 
         self.deterministic = deterministic
         self.ubar = ubar
@@ -339,9 +318,7 @@ class GymNonLinearTankPID(gym.Env):
         self.timesp = timesp
         self.disturbance = disturbance
 
-        self.system = NonLinearTankPID(
-            self.ubar, self.ybar, self.A, self.ysp, self.timesp, self.disturbance
-        )
+        self.system = NonLinearTankPID(self.ubar, self.ybar, self.A, self.ysp, self.timesp, self.disturbance)
 
     def reset(self):
         """
@@ -408,12 +385,10 @@ class GymLinearTankPID(gym.Env):
         timesp=1,
         disturbance=False,
     ):
-        super(GymLinearTankPID, self).__init__()
+        super().__init__()
         n_actions = 3
         self.action_space = spaces.Box(-1.0, 1.0, (n_actions,))
-        self.observation_space = spaces.Box(
-            low=-100.0, high=100.0, shape=(2,), dtype=np.float32
-        )
+        self.observation_space = spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32)
 
         self.deterministic = deterministic
         self.ubar = ubar
