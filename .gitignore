@@ -1,2 +1,6 @@
 .ipynb_checkpoints
 dev
+.mypy_cache
+.venv
+.tox
+__pycache__
