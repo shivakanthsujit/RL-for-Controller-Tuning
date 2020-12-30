@@ -1,23 +1,27 @@
-import control
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
 from control.matlab import *
 from gym import spaces
 from scipy.integrate import solve_ivp
+from simple_pid import PID
+
+from utils import fig2data
 
 uinit = 105
-T = 438.7763
+umin = 95.0
+umax = 112.0
+Tinit = 438.7763
 yinit = 0.1
 delt = 0.083
-slew_rate = 20
+slew_rate = 20.0
 
 
-class CSTRPIDBase:
+class CSTR:
     def __init__(
         self,
         uinit=uinit,
-        T=T,
+        Tinit=Tinit,
         yinit=yinit,
         delt=delt,
         ttfinal=None,
@@ -28,13 +32,38 @@ class CSTRPIDBase:
         self.delt = delt  # sample time
         self.ttfinal = ttfinal  # final simulation time
         self.ksp = 10
+        self.slew_rate = slew_rate
+        self.umin = umin
+        self.umax = umax
+        self.input_low = np.array([self.umin])
+        self.input_high = np.array([self.umax])
         self.inputs = ["Setpoint", "Output", "Model Region"]
-        self.reset_init(uinit, T, yinit, ttfinal, disturbance, deterministic)
+        self.reset_init(uinit, Tinit, yinit, ttfinal, disturbance, deterministic)
+
+    @property
+    def state_names(self):
+        names = ["Setpoint(k)", "Output(k)", "Output(k-1)", "Model Region(k)"]
+        assert len(names) == self.n_states
+        return names
+
+    @property
+    def input_names(self):
+        names = ["Input(k)"]
+        assert len(names) == self.n_actions
+        return
+
+    @property
+    def n_states(self):
+        return len(self.get_state())
+
+    @property
+    def n_actions(self):
+        return self.input_low.shape[0]
 
     def reset_init(
         self,
         uinit=uinit,
-        T=T,
+        Tinit=Tinit,
         yinit=yinit,
         ttfinal=None,
         disturbance=True,
@@ -42,9 +71,8 @@ class CSTRPIDBase:
     ):
         #  plant initial conditions
         self.uinit = uinit
+        self.Tinit = Tinit
         self.yinit = yinit
-        self.T = T
-        self.slew_rate = slew_rate
 
         self.disturbance = disturbance
         if deterministic:
@@ -59,7 +87,7 @@ class CSTRPIDBase:
         else:
             self.r = np.concatenate(
                 (
-                    np.ones((self.ksp, 1)) * 0.1,
+                    np.ones((self.ksp, 1)) * self.yinit,
                     np.ones((40, 1)) * np.random.uniform(0.11, 0.14),
                     np.ones((30, 1)) * np.random.uniform(0.07, 0.10),
                     np.ones((40, 1)) * np.random.uniform(0.08, 0.11),
@@ -72,7 +100,7 @@ class CSTRPIDBase:
 
         return self.reset()
 
-    def reset(self):
+    def reset_env(self):
         # Reset sim time
         self.tinitial = 0
         self.tfinal = self.tinitial + self.delt
@@ -84,16 +112,23 @@ class CSTRPIDBase:
         # Output vector
         self.y = np.zeros((self.kfinal + 1, 1))
         self.y[: self.ksp] = np.ones((self.ksp, 1)) * self.yinit
+        # Temperature Vector
+        self.T = np.zeros((self.kfinal + 1, 1))
+        self.T[: self.ksp] = np.ones((self.ksp, 1)) * self.Tinit
         # Error vector
         self.E = np.zeros((self.kfinal, 1))
         # State Vector
-        self.x = [self.yinit, self.T]
+        self.x = [self.yinit, self.Tinit]
         # Model Vector
         self.m = np.zeros((self.kfinal + 1, 1))
         self.m[: self.ksp] = np.ones((self.ksp, 1)) * self.get_model_region()
-        # PID Gains Vector
-        self.gains = np.zeros((self.kfinal + 1, 3))
         return self.r[self.k][0], self.y[self.k][0]
+
+    def reset(self):
+        # Input vector
+        self.input = np.zeros((self.kfinal + 1, self.n_actions))
+        self.input[: self.ksp] = np.ones((self.ksp, 1)) * self.uinit
+        return self.reset_env()
 
     def dec_ode(self, u):
         def ode_eqn(t, z):
@@ -132,35 +167,15 @@ class CSTRPIDBase:
 
         return ode_eqn
 
-    def step(self, Kc, tau_i, tau_d):
-        if self.k == self.kfinal - 1:
-            print("Environment is done. Call `reset()` to start again.")
-            return
-        # Add to gains vector
-        self.gains[self.k] = np.array([Kc, tau_i, tau_d])
+    def step_env(self, u):
+        # Slew rate
+        if self.slew_rate:
+            u = np.clip(u, self.u[self.k - 1] - self.slew_rate, self.u[self.k - 1] + self.slew_rate)
         # Disturbance
-        d = 0.05 * np.random.randn() + 0.05 if self.disturbance else 0.0
-
-        # Set point error
-        self.E[self.k] = self.r[self.k][0] - self.y[self.k][0]
-
-        # Calculate control action using Discrete PID Implementation
-        self.du[self.k] = Kc * (
-            self.E[self.k]
-            - self.E[self.k - 1]
-            + (self.delt / tau_i) * self.E[self.k]
-            + (tau_d / self.delt) * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
-        )
-        # Slew rate control to prevent controller output from exploding
-        self.du[self.k] = np.clip(
-            self.du[self.k],
-            self.du[self.k - 1] - self.slew_rate,
-            self.du[self.k - 1] + self.slew_rate,
-        )
-        # Update input vector
-        self.u[self.k] = self.u[self.k - 1] + self.du[self.k] + d
-        self.u[self.k] = np.maximum(1e-4, self.u[self.k])
-
+        d = 0.05 * np.random.randn() if self.disturbance else 0.0
+        self.u[self.k] = u + d
+        # Control Constraints
+        self.u[self.k] = np.clip(self.u[self.k], self.umin, self.umax)
         # Solve ODE and update state vector and output vector
         sol = solve_ivp(self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], self.x)
         self.x[0] = sol.y[0][-1]
@@ -174,47 +189,48 @@ class CSTRPIDBase:
         self.k = self.k + 1
         return self.r[self.k][0], self.y[self.k][0]
 
-    def plot(self, use_sample_instant=True):
-        if self.k == 0:
-            print("Simulation not started.")
-        else:
-            axis = self.tt[: self.k].copy()
-            if use_sample_instant:
-                axis = np.arange(self.k)
-
-            plt.figure(figsize=(12, 12))
-            plt.subplot(2, 1, 1)
-            plt.step(axis, self.r[: self.k], linestyle="dashed", label="Setpoint")
-            plt.plot(axis, self.y[: self.k], label="Plant Output")
-            plt.ylabel("y")
-            plt.xlabel("time")
-            plt.title("Plant Output")
-            plt.grid()
-            plt.legend()
-
-            plt.subplot(2, 1, 2)
-            plt.step(axis, self.u[: self.k], label="Control Input")
-            plt.ylabel("u")
-            plt.xlabel("time")
-            plt.title("Control Action")
-            plt.grid()
-            plt.legend()
-            plt.show()
-
-            labels = ["Kp", "Ki", "Kd"]
-            plt.figure(figsize=(12, 12))
-            plt.suptitle("PID Gains")
-            for i in range(3):
-                plt.subplot(3, 1, i + 1)
-                plt.plot(np.arange(len(self.gains[: self.k, i])), self.gains[: self.k, i], label=labels[i])
-                plt.legend()
-                plt.grid()
-                plt.xlabel("time")
-                plt.ylabel("Value")
-            plt.show()
+    def step(self, u):
+        self.input[self.k] = np.array(u)
+        return self.step_env(u)
 
     def get_state(self):
-        return self.r[self.k][0], self.y[self.k][0], self.m[self.k - 1]
+        return self.r[self.k][0], self.y[self.k][0], self.y[self.k - 1][0], self.m[self.k - 1]
+
+    def plot(self, save=False):
+        plt.figure(figsize=(16, 16))
+        plt.subplot(3, 1, 1)
+        plt.step(
+            self.tt[: self.k],
+            self.r[: self.k],
+            linestyle="dashed",
+            label="Setpoint",
+        )
+        plt.plot(self.tt[: self.k], self.y[: self.k], label="Plant Output")
+        plt.ylabel("y")
+        plt.xlabel("time")
+        plt.title("Plant Output")
+        plt.grid()
+        plt.legend()
+
+        plt.subplot(3, 1, 2)
+        plt.step(self.tt[: self.k], self.u[: self.k], label="Control Input")
+        plt.ylabel("u")
+        plt.xlabel("time")
+        plt.title("Control Action")
+        plt.grid()
+        plt.legend()
+
+        plt.subplot(3, 1, 3)
+        for i in range(self.n_actions):
+            plt.plot(self.tt[: self.k], self.input[: self.k, i], label=self.input_names[i])
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.title("Inputs")
+        plt.grid()
+        plt.legend()
+        if save:
+            plt.tight_layout()
+            return fig2data(plt.gcf())
 
     def get_model_region(self):
         m_values = np.linspace(-1, 1, 6)
@@ -254,90 +270,143 @@ class CSTRPIDBase:
         )
 
 
-qcbar = 106.0
-tbar = 438.0
+min_gains = [0.0, 0.0, 0.0]
+max_gains = [140.0, 140.0, 140.0]
 
 
-class GymCSTRPID(gym.Env):
+class CSTRPID(CSTR):
+    @property
+    def input_names(self):
+        return ["Kp(k)", "Ki(k)", "Kd(k)"]
+
+    def reset(self, *args, **kwargs):
+        self.Gc = PID(
+            5, 1, 0, setpoint=self.yinit, sample_time=self.delt, output_limits=(self.umin, self.umax), auto_mode=False
+        )
+        self.Gc.set_auto_mode(True, last_output=self.yinit)
+        self.slew_rate = None
+        self.input_low = np.array(min_gains)
+        self.input_high = np.array(max_gains)
+        # Input vector
+        self.input = np.zeros((self.kfinal + 1, self.n_actions))
+        self.input[: self.ksp] = np.ones((self.ksp, self.n_actions)) * np.array([5, 1, 0])
+        return self.reset_env(*args, **kwargs)
+
+    def step(self, Kp, Ki, Kd):
+        self.input[self.k] = np.array([Kp, Ki, Kd])
+        self.E[self.k] = self.r[self.k][0] - self.y[self.k][0]
+        self.Gc.setpoint = self.r[self.k][0]
+        self.Gc.tunings = (Kp, Ki, Kd)
+        u = self.Gc(self.y[self.k][0], self.tt[self.k])
+        return self.step_env(u)
+
+
+class GymCSTR(gym.Env):
     def __init__(
         self,
-        system=CSTRPIDBase,
         uinit=uinit,
-        T=T,
+        Tinit=Tinit,
         yinit=yinit,
+        system=CSTRPID,
         disturbance=True,
         deterministic=True,
     ):
         super().__init__()
         self.uinit = uinit
-        self.T = T
+        self.Tinit = Tinit
         self.yinit = yinit
         self.disturbance = disturbance
         self.deterministic = deterministic
 
         self.system = system(
             uinit=self.uinit,
-            T=self.T,
+            Tinit=self.Tinit,
             yinit=self.yinit,
             disturbance=self.disturbance,
             deterministic=self.deterministic,
         )
 
-        n_actions = 3
-        obs_dim = len(self.system.get_state())
+        n_actions = self.system.n_actions
         self.action_space = spaces.Box(-1.0, 1.0, (n_actions,))
-        self.observation_space = spaces.Box(low=-2.0, high=2.0, shape=(obs_dim,), dtype=np.float32)
+        self.n_states = self.system.n_states
+        self.observation_space = spaces.Box(low=-2.0, high=2.0, shape=(self.n_states,), dtype=np.float32)
 
     def convert_state(self):
         obs = self.system.get_state()
         obs = np.array(obs).astype(np.float32)
         return obs
 
+    def convert_action(self, action):
+        actions = (action + 1) * (self.system.input_high - self.system.input_low) * 0.5 + self.system.input_low
+        return actions
+
+    def unconvert_action(self, action):
+        actions = (2.0 * action - (self.system.input_high + self.system.input_low)) / (
+            self.system.input_high - self.system.input_low
+        )
+        return actions
+
     def reset(self):
         _ = self.system.reset()
         obs = self.convert_state()
         return obs
 
-    def convert_action(self, action):
-        scaling = [[70.0, 70.0], [0.5, 0.50001], [0.5, 0.5]]
-        actions = [0, 0, 0]
-        for i in range(len(action)):
-            actions[i] = action[i] * scaling[i][0] + scaling[i][1]
-        return actions
-
     def step(self, action, debug=False):
-        # Rescale to appropriate range
+        if debug:
+            print("Original: ", action)
         action = self.convert_action(action)
         if debug:
-            print(action)
-        # Execute one timestep in sim
+            print("Converted: ", action)
         obs = self.system.step(*action)
         # Calculate error and reward
         e = obs[0] - obs[1]
-        e_squared = np.abs(e) ** 2
-        offset = 0.002 if np.abs(e) > 1e-4 else 0.0
-        reward = -(e_squared + offset)
-        # Check if sim is over and get RL State Vector
-        done = bool(self.system.k == (self.system.kfinal - 1))
-        obs = self.convert_state()
-        # Ignore
+        scale = 1.0
+        e_squared = scale * np.abs(e) ** 2
+        e_squared = np.minimum(e_squared, 10.0)
+        tol = (0.1 - np.abs(e)) if np.abs(e) <= 1e-3 else 0.0
+        reward = -e_squared + tol
+        done = bool(self.system.k == self.system.kfinal - 1)
         info = {}
+        obs = self.convert_state()
         return obs, reward, done, info
 
     def render(self, mode="plot"):
-        if mode != "plot":
-            raise NotImplementedError()
-        print("ISE: ", self.system.ise())
-        self.system.plot()
+        if mode == "plot":
+            print("ISE: ", self.system.ise())
+            self.system.plot()
+        elif mode == "rgb_array":
+            return self.system.plot(save=True)
 
     def close(self):
         pass
 
 
+env_name = "CSTRPID-v0"
+if env_name in gym.envs.registry.env_specs:
+    del gym.envs.registry.env_specs[env_name]
+gym.envs.register(
+    id=env_name,
+    entry_point="cstr_control_env:GymCSTR",
+)
 if __name__ == "__main__":
-    sim = CSTRPIDBase()
-    sim.reset()
-    for i in range(sim.kfinal - sim.ksp):
-        _, _ = sim.step(119, 0.3367, 0.1926)
-    print("ISE: ", sim.ise())
-    sim.plot()
+    env = GymCSTR(disturbance=False, deterministic=True)
+    obss = []
+    obs = env.reset()
+    obss.append(obs)
+    done = False
+    tot_r = 0.0
+    while not done:
+        # obs, r, done, _ = env.step(env.unconvert_action(np.array([0.0, 0.0, 0.0])), True)
+        # obs, r, done, _ = env.step(np.array([-1, -1, -1]), True)
+        obs, r, done, _ = env.step(
+            env.action_space.sample(),
+        )
+        tot_r += r
+        obss.append(obs)
+    print(tot_r)
+    env.render()
+    plt.figure(figsize=(16, 8))
+    plt.plot(np.arange(len(np.array(obss)[:, 0])), np.array(obss))
+    plt.grid()
+    plt.xlabel("time")
+    plt.ylabel("Value")

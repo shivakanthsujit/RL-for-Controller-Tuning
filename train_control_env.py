@@ -13,9 +13,10 @@ print("CUDA Available: ", torch.cuda.is_available())
 torch.autograd.set_detect_anomaly(True)
 
 tag_name = "PID_Control_PPO"
-checkpoint_callback = CheckpointCallback(10000, "./models", tag_name)
-
+model_dir = "./models"
 log_dir = os.path.join("./logs", tag_name)
+
+checkpoint_callback = CheckpointCallback(10000, model_dir, tag_name)
 save_callback = SaveOnBestTrainingRewardCallback(check_freq=50000, log_dir=log_dir, verbose=1)
 eval_env = GymSystem(deterministic=True)
 save_image_callback = SaveImageCallback(eval_env=eval_env, eval_freq=20000, log_dir=log_dir)

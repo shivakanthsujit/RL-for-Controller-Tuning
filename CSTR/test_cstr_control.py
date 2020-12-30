@@ -2,17 +2,16 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+from cstr_control_env import GymCSTR
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecCheckNan, VecNormalize
 
-from control_env import GymSystem
-
-tag_name = "PID_Control_PPO"
+tag_name = "CSTR_PID_Control_PPO"
 log_dir = os.path.join("./logs", tag_name)
 save_path = None
 
-env = GymSystem()
+env = GymCSTR()
 env = make_vec_env(lambda: env, n_envs=4, monitor_dir=log_dir)
 try:
     env = VecNormalize.load(os.path.join(log_dir, "vec_normalize.pkl"), env)
@@ -26,7 +25,7 @@ if save_path is not None:
 else:
     raise RuntimeError("Saved Model not found.")
 
-test_env = GymSystem()
+test_env = GymCSTR()
 obs = test_env.reset()
 obss = [obs]
 norm_obss = [model.env.normalize_obs(obs)]
