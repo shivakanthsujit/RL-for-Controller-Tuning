@@ -1,3 +1,6 @@
+"""
+ `control_env.py` contains the latest code. Will remove this file once that is done.
+"""
 import control
 import gym
 import matplotlib.pyplot as plt
@@ -242,7 +245,7 @@ class NonLinearTankPID:
             + (self.delt / tau_i) * self.E[self.k]
             + (tau_d / self.delt) * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
         )
-        self.du[self.k] = np.clip(self.du[self.k], self.du[self.k - 1] - 400, self.du[self.k - 1] + 400)
+        self.dU[self.k] = np.clip(self.dU[self.k], self.dU[self.k - 1] - 400, self.dU[self.k - 1] + 400)
         self.U[self.k] = self.U[self.k - 1] + self.dU[self.k]
         w = 0.05 * np.random.randn() if self.disturbance else 0.0
         d = 0.05 if self.k >= 80 else 0.0
@@ -472,7 +475,7 @@ if __name__ == "__main__":
     sim = NonLinearTankPID()
     sim.reset()
     for i in range(sim.kfinal - sim.ksp):
-        _, _ = sim.step(11.0, 1e8, 0.2)
+        _, _ = sim.step(11.0, 0.05, 0.2)
     print(sim.ise())
     sim.plot()
 

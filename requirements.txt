@@ -1,4 +1,5 @@
-stable-baselines3
-slycot
 control
 gym
+simple-pid
+slycot
+stable-baselines3

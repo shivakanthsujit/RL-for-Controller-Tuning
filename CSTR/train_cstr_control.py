@@ -3,6 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from cstr_control_env import GymCSTRPID
 from stable_baselines3 import A2C, PPO
 from stable_baselines3.common.callbacks import (
     CallbackList,
@@ -11,8 +12,6 @@ from stable_baselines3.common.callbacks import (
 )
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan, VecNormalize
-
-from cstr_control_env import GymCSTRPID
 
 torch.autograd.set_detect_anomaly(True)
 
