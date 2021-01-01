@@ -4,3 +4,4 @@ dev
 .venv
 .tox
 __pycache__
+CSTR/test.ipynb

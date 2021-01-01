@@ -205,22 +205,33 @@ class SystemSimplePID(System):
         self.Gc = PID(
             5, 1, 0, setpoint=self.yinit, sample_time=self.delt, output_limits=(self.umin, self.umax), auto_mode=False
         )
-        self.Gc.set_auto_mode(True, last_output=self.yinit)
+        self.Gc.set_auto_mode(True, last_output=self.uinit)
         self.slew_rate = None
         self.input_low = np.array(min_gains)
         self.input_high = np.array(max_gains)
         # Input vector
         self.input = np.zeros((self.kfinal + 1, self.n_actions))
         self.input[: self.ksp] = np.ones((self.ksp, self.n_actions)) * np.array([5, 1, 0])
+        self.gains = []
         return self.reset_env(*args, **kwargs)
 
     def step(self, Kp, Ki, Kd):
-        self.input[self.k] = np.array([Kp, Ki, Kd])
         self.E[self.k] = self.r[self.k][0] - self.y[self.k][0]
         self.Gc.setpoint = self.r[self.k][0]
         self.Gc.tunings = (Kp, Ki, Kd)
-        u = self.Gc(self.y[self.k][0], self.tt[self.k])
+        u = self.Gc(self.y[self.k][0], self.delt)
+
+        self.input[self.k] = np.array([Kp, Ki, Kd])
+        self.gains.append(self.Gc.components)
         return self.step_env(u)
+
+    def plot_gain_components(self):
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 0], label="Proportional")
+        plt.show()
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 1], label="Integral")
+        plt.show()
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 2], label="Derivative")
+        plt.show()
 
 
 class GymSystem(gym.Env):
@@ -315,7 +326,7 @@ gym.envs.register(
 )
 
 if __name__ == "__main__":
-    env = GymSystem(disturbance=False, deterministic=True)
+    env = GymSystem(disturbance=False, deterministic=False)
     obss = []
     obs = env.reset()
     obss.append(obs)
@@ -323,16 +334,18 @@ if __name__ == "__main__":
     tot_r = 0.0
     while not done:
         # obs, r, done, _ = env.step(env.unconvert_action(np.array([0.0, 0.0, 0.0])), True)
-        # obs, r, done, _ = env.step(np.array([-1, -1, -1]), True)
-        obs, r, done, _ = env.step(
-            env.action_space.sample(),
-        )
+        obs, r, done, _ = env.step(np.array([-1, -1, -1]), True)
+        # obs, r, done, _ = env.step(
+        #     env.action_space.sample(),
+        # )
         tot_r += r
         obss.append(obs)
     print(tot_r)
     env.render()
+    # plt.show()
     plt.figure(figsize=(16, 8))
     plt.plot(np.arange(len(np.array(obss)[:, 0])), np.array(obss))
     plt.grid()
     plt.xlabel("time")
     plt.ylabel("Value")
+    plt.show()

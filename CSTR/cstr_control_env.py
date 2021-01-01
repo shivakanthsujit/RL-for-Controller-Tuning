@@ -37,7 +37,6 @@ class CSTR:
         self.umax = umax
         self.input_low = np.array([self.umin])
         self.input_high = np.array([self.umax])
-        self.inputs = ["Setpoint", "Output", "Model Region"]
         self.reset_init(uinit, Tinit, yinit, ttfinal, disturbance, deterministic)
 
     @property
@@ -50,7 +49,7 @@ class CSTR:
     def input_names(self):
         names = ["Input(k)"]
         assert len(names) == self.n_actions
-        return
+        return names
 
     @property
     def n_states(self):
@@ -194,7 +193,7 @@ class CSTR:
         return self.step_env(u)
 
     def get_state(self):
-        return self.r[self.k][0], self.y[self.k][0], self.y[self.k - 1][0], self.m[self.k - 1]
+        return self.r[self.k][0], self.y[self.k][0], self.y[self.k - 1][0], self.m[self.k - 1][0]
 
     def plot(self, save=False):
         plt.figure(figsize=(16, 16))
@@ -274,6 +273,45 @@ min_gains = [0.0, 0.0, 0.0]
 max_gains = [140.0, 140.0, 140.0]
 
 
+class CSTRManualPID(CSTR):
+    @property
+    def input_names(self):
+        return ["Kp(k)", "Ki(k)", "Kd(k)"]
+
+    def reset(self):
+        self.input_low = np.array(min_gains)
+        self.input_high = np.array(max_gains)
+        # Input vector
+        self.input = np.zeros((self.kfinal + 1, self.n_actions))
+        self.input[: self.ksp] = np.ones((self.ksp, self.n_actions)) * np.array([5, 1, 0])
+        self.gains = []
+        return self.reset_env()
+
+    def step(self, Kp, Ki, Kd):
+        self.E[self.k] = self.r[self.k][0] - self.y[self.k][0]
+        proportional = Kp * (self.E[self.k] - self.E[self.k - 1])
+        integral = 0.5 * Ki * self.delt * (self.E[self.k] + self.E[self.k - 1])
+        derivative = (Kd / self.delt) * (self.E[self.k] - 2 * self.E[self.k - 1] + self.E[self.k - 2])
+        du = proportional + integral + derivative
+        u = self.u[self.k - 1] + du
+
+        self.input[self.k] = np.array([Kp, Ki, Kd])
+        self.gains.append([proportional[0], integral[0], derivative[0]])
+        return self.step_env(u)
+
+    def plot_gain_components(self):
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 0], label="Proportional")
+        plt.show()
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 1], label="Integral")
+        plt.show()
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 2], label="Derivative")
+        plt.show()
+
+
+min_gains = [0.0, 0.0, 0.0]
+max_gains = [140.0, 2.0, 2.0]
+
+
 class CSTRPID(CSTR):
     @property
     def input_names(self):
@@ -283,22 +321,76 @@ class CSTRPID(CSTR):
         self.Gc = PID(
             5, 1, 0, setpoint=self.yinit, sample_time=self.delt, output_limits=(self.umin, self.umax), auto_mode=False
         )
-        self.Gc.set_auto_mode(True, last_output=self.yinit)
+        self.Gc.set_auto_mode(True, last_output=self.uinit)
         self.slew_rate = None
         self.input_low = np.array(min_gains)
         self.input_high = np.array(max_gains)
         # Input vector
         self.input = np.zeros((self.kfinal + 1, self.n_actions))
         self.input[: self.ksp] = np.ones((self.ksp, self.n_actions)) * np.array([5, 1, 0])
+
+        self.gains = []
+        self.gain_components = []
         return self.reset_env(*args, **kwargs)
 
-    def step(self, Kp, Ki, Kd):
-        self.input[self.k] = np.array([Kp, Ki, Kd])
+    def step(self, Kp, taui, taud):
+        Ki = Kp / (taui + 1e-2)
+        Kd = Kp * taud
         self.E[self.k] = self.r[self.k][0] - self.y[self.k][0]
         self.Gc.setpoint = self.r[self.k][0]
         self.Gc.tunings = (Kp, Ki, Kd)
-        u = self.Gc(self.y[self.k][0], self.tt[self.k])
+        u = self.Gc(self.y[self.k][0], self.delt)
+
+        self.input[self.k] = np.array([Kp, Ki, Kd])
+        self.gains.append([Kp, taui, taud])
+        self.gain_components.append(self.Gc.components)
         return self.step_env(u)
+
+    def plot_gains(self):
+        plt.figure(figsize=(16, 9))
+        plt.subplot(3, 1, 1)
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 0], label="Kp")
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.grid()
+        plt.legend()
+
+        plt.subplot(3, 1, 2)
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 1], label="taui")
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.grid()
+        plt.legend()
+
+        plt.subplot(3, 1, 3)
+        plt.plot(self.tt[: len(self.gains)], np.array(self.gains)[:, 2], label="taud")
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.grid()
+        plt.legend()
+
+    def plot_gain_components(self):
+        plt.figure(figsize=(16, 9))
+        plt.subplot(3, 1, 1)
+        plt.plot(self.tt[: len(self.gain_components)], np.array(self.gain_components)[:, 0], label="Proportional")
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.grid()
+        plt.legend()
+
+        plt.subplot(3, 1, 2)
+        plt.plot(self.tt[: len(self.gain_components)], np.array(self.gain_components)[:, 1], label="Integral")
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.grid()
+        plt.legend()
+
+        plt.subplot(3, 1, 3)
+        plt.plot(self.tt[: len(self.gain_components)], np.array(self.gain_components)[:, 2], label="Derivative")
+        plt.ylabel("Value")
+        plt.xlabel("time")
+        plt.grid()
+        plt.legend()
 
 
 class GymCSTR(gym.Env):
@@ -388,25 +480,29 @@ gym.envs.register(
     id=env_name,
     entry_point="cstr_control_env:GymCSTR",
 )
+
 if __name__ == "__main__":
-    env = GymCSTR(disturbance=False, deterministic=True)
+    Kp = 120.0
+    taui = 0.3367
+    taud = 0.19
+    Ki = Kp / taui
+    Kd = Kp * taud
+
+    args = {"disturbance": False, "deterministic": True}
+    env = GymCSTR(**args)
     obss = []
     obs = env.reset()
     obss.append(obs)
     done = False
     tot_r = 0.0
     while not done:
-        # obs, r, done, _ = env.step(env.unconvert_action(np.array([0.0, 0.0, 0.0])), True)
-        # obs, r, done, _ = env.step(np.array([-1, -1, -1]), True)
-        obs, r, done, _ = env.step(
-            env.action_space.sample(),
-        )
+        obs, r, done, _ = env.step(env.unconvert_action(np.array([Kp, taui, taud])))
         tot_r += r
         obss.append(obs)
     print(tot_r)
     env.render()
-    plt.figure(figsize=(16, 8))
-    plt.plot(np.arange(len(np.array(obss)[:, 0])), np.array(obss))
-    plt.grid()
-    plt.xlabel("time")
-    plt.ylabel("Value")
+    plt.show()
+    env.system.plot_gains()
+    plt.show()
+    env.system.plot_gain_components()
+    plt.show()
