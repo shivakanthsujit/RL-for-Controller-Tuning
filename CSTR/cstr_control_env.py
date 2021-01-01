@@ -8,7 +8,7 @@ from simple_pid import PID
 
 from utils import fig2data
 
-uinit = 105
+uinit = 103.0
 umin = 95.0
 umax = 112.0
 Tinit = 438.7763
@@ -204,10 +204,13 @@ class CSTR:
             linestyle="dashed",
             label="Setpoint",
         )
+        ise = f"{self.ise():.3e}"
+        piecewise_ise = "{:.3e}, {:.3e}, {:.3e}".format(*self.get_piecewise_ise())
+        title = f"ISE: {ise}, Piecewise ISE: {piecewise_ise}"
         plt.plot(self.tt[: self.k], self.y[: self.k], label="Plant Output")
         plt.ylabel("y")
         plt.xlabel("time")
-        plt.title("Plant Output")
+        plt.title(title)
         plt.grid()
         plt.legend()
 
@@ -229,10 +232,12 @@ class CSTR:
         plt.legend()
         if save:
             plt.tight_layout()
-            return fig2data(plt.gcf())
+            img = fig2data(plt.gcf())
+            plt.close()
+            return img
 
     def get_model_region(self):
-        m_values = np.linspace(-1, 1, 6)
+        m_values = np.linspace(-0.2, 0.2, 6)
         m = m_values[0]
         if self.u[self.k] >= 97.0 and self.u[self.k] <= 100.0:
             m = m_values[1]
@@ -452,10 +457,10 @@ class GymCSTR(gym.Env):
         obs = self.system.step(*action)
         # Calculate error and reward
         e = obs[0] - obs[1]
-        scale = 1.0
+        scale = 15.0
         e_squared = scale * np.abs(e) ** 2
         e_squared = np.minimum(e_squared, 10.0)
-        tol = (0.1 - np.abs(e)) if np.abs(e) <= 1e-3 else 0.0
+        tol = (0.1 - np.abs(e)) if np.abs(e) <= 1e-4 else 0.0
         reward = -e_squared + tol
         done = bool(self.system.k == self.system.kfinal - 1)
         info = {}
@@ -502,7 +507,7 @@ if __name__ == "__main__":
     print(tot_r)
     env.render()
     plt.show()
-    env.system.plot_gains()
-    plt.show()
-    env.system.plot_gain_components()
-    plt.show()
+    # env.system.plot_gains()
+    # plt.show()
+    # env.system.plot_gain_components()
+    # plt.show()

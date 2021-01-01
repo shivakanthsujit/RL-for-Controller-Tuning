@@ -115,7 +115,7 @@ class SaveImageCallback(BaseCallback):
             if self.save_path is not None:
                 eval_img = self.eval_env.render("rgb_array")
                 im = Image.fromarray(eval_img)
-                path = os.path.join(self.save_path, f"{self.n_calls}.png")
+                path = os.path.join(self.save_path, f"{str(self.n_calls).zfill(7)}.png")
                 im.save(path)
 
         return True
