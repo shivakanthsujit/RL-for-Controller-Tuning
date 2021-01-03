@@ -6,7 +6,7 @@ from gym import spaces
 from scipy.integrate import solve_ivp
 from simple_pid import PID
 
-from utils import fig2data
+from ..utils import fig2data
 
 uinit = 103.0
 umin = 95.0
