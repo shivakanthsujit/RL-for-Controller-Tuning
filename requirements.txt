@@ -1,5 +1,6 @@
 control
 gym
+scikit-fuzzy
 simple-pid
 slycot
 stable-baselines3
