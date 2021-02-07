@@ -473,6 +473,41 @@ class CSTRFuzzyPID2(CSTRFuzzyPID):
         return state
 
 
+class CSTRFuzzyPID3(CSTRPID):
+    @property
+    def state_names(self):
+        names = names = ["M1(k)", "M2(k)", "M3(k)", "M4(k)"]
+        assert len(names) == self.n_states
+        return names
+
+    @property
+    def n_states(self):
+        return len(self.get_state())
+
+    def reset_input(self):
+        self.q_range = np.arange(95, 113, 0.001)
+        # Generate fuzzy membership functions
+        m1 = fuzz.trapmf(self.q_range, [95, 95, 106.2, 107.4])
+        m2 = fuzz.trimf(self.q_range, [106.2, 107.4, 108])
+        m3 = fuzz.trimf(self.q_range, [107.4, 108, 109.2])
+        m4 = fuzz.trapmf(self.q_range, [108, 109.2, 113, 113])
+        self.membership_fns = [m1, m2, m3, m4]
+        return super().reset_input()
+
+    def fuzzify(self, u):
+        u = np.clip(u, self.q_range[0], self.q_range[-1])
+        fuzzy_values = np.array(
+            [fuzz.interp_membership(self.q_range, self.membership_fns[i], u) for i in range(len(self.membership_fns))]
+        )
+        return fuzzy_values
+
+    def get_state(self):
+        u = self.u[self.k - 1][0]
+        state = self.fuzzify(u)
+        state -= 0.5
+        return state
+
+
 class GymCSTR(gym.Env):
     def __init__(
         self,

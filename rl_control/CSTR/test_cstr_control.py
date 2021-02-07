@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from cstr_control_env import CSTRFuzzyPID, CSTRFuzzyPID2, GymCSTR, lamda
+from cstr_control_env import CSTRFuzzyPID, CSTRFuzzyPID2, CSTRFuzzyPID3, GymCSTR, lamda
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecCheckNan, VecNormalize
@@ -76,6 +76,7 @@ if action_repeat:
 obs = test_env.reset()
 obss = [obs]
 norm_obss = [model.env.normalize_obs(obs)]
+actions = []
 done = False
 tot_r = 0.0
 while not done:
@@ -83,6 +84,7 @@ while not done:
     obs, reward, done, info = test_env.step(action)
     obss.append(obs)
     norm_obss.append(model.env.normalize_obs(obs))
+    actions.append(action)
     tot_r += reward
 print("Evaluation Reward: ", tot_r)
 test_env.render()
@@ -93,32 +95,42 @@ labels = test_env.system.state_names.copy()
 obss = np.array(obss)
 norm_obss = np.array(norm_obss)
 
+plt.figure(figsize=(16, 4))
+lineObj = plt.plot(axis[test_env.system.ksp :: action_repeat_value], actions)
+plt.legend(lineObj, ["Kp", "taui", "taud"])
+plt.ylabel("Value")
+plt.xlabel(axis_name)
+plt.xlim(axis[0], axis[-1])
+plt.title("Agent Outputs")
+plt.show()
+
 plt.figure(figsize=(16, 9))
 plt.subplot(2, 1, 1)
-for i in range(test_env.system.n_states):
-    plt.plot(axis[test_env.system.ksp : test_env.system.ksp + len(obss)], obss[:, i], label=labels[i])
-    plt.ylabel("Value")
-    plt.xlabel(axis_name)
-    plt.xlim(axis[0], axis[-1])
-    plt.grid()
-    plt.legend()
+lineObj = plt.plot(axis[test_env.system.ksp :: action_repeat_value], obss[:-1])
+plt.legend(lineObj, labels)
+plt.ylabel("Value")
+plt.xlabel(axis_name)
+plt.xlim(axis[0], axis[-1])
+plt.grid()
+plt.title("Unnormalized States")
 
 plt.subplot(2, 1, 2)
-for i in range(test_env.system.n_states):
-    plt.plot(axis[test_env.system.ksp : test_env.system.ksp + len(norm_obss)], norm_obss[:, i], label=labels[i])
-    plt.ylabel("Value")
-    plt.xlabel(axis_name)
-    plt.xlim(axis[0], axis[-1])
-    plt.grid()
-    plt.legend()
+lineObj = plt.plot(axis[test_env.system.ksp :: action_repeat_value], norm_obss[:-1])
+plt.legend(lineObj, labels)
+plt.ylabel("Value")
+plt.xlabel(axis_name)
+plt.xlim(axis[0], axis[-1])
+plt.grid()
+plt.title("Normalized States")
 
 
-values = np.arange(0, 5)
+values = np.arange(0, test_env.n_states)
 n_values = np.max(values) + 1
 regions = np.eye(n_values)[values]
+regions = regions - 0.5
 
 for i, region in enumerate(regions):
     action, _ = model.predict(model.env.normalize_obs(region), deterministic=True)
     action = test_env.convert_action(action)
     print(test_env.system.state_names[i])
-    print("Kp: {:.3f}, TauI: {:.3f}, TauD: {:.3f}".format(action[0] * 0.5, action[1], action[2]))
+    print("Kp: {:.3f}, TauI: {:.3f}, TauD: {:.3f}".format(action[0], action[1], action[2]))

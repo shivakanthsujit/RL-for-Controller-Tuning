@@ -1,7 +1,7 @@
 import os
 
 import torch
-from cstr_control_env import CSTRFuzzyPID, CSTRFuzzyPID2, GymCSTR, lamda
+from cstr_control_env import CSTRFuzzyPID, CSTRFuzzyPID2, CSTRFuzzyPID3, GymCSTR, lamda
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 from stable_baselines3.common.env_util import make_vec_env
