@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from cstr_control_env import GymCSTRPID
 from stable_baselines3.common.env_checker import check_env
+
+from cstr_control_env import GymCSTRPID
 
 
 def test_env(env):

@@ -3,10 +3,11 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from cstr_control_env import CSTRFuzzyPID, CSTRFuzzyPID2, CSTRFuzzyPID3, GymCSTR, lamda
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecCheckNan, VecNormalize
+
+from cstr_control_env import CSTRFuzzyPID2, CSTRFuzzyPID3, GymCSTR, lamda
 from wrappers import ActionRepeat, EarlyStopping
 
 torch.autograd.set_detect_anomaly(True)
