@@ -1,10 +1,12 @@
 # RL for Controller Tuning
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/CSTR-Fuzzy.ipynb)
+
 ## Usage
 
 Install dependencies using `requirements.txt`
 
-A CSTR system has been implemented along with a Fuzzy PID controller for the same process. The script to train the RL agent to tune the Fuzzy PID is `train_cstr_control.py`. The performance of the trained agent can be evaluated with the accompanying script `test_cstr_control.py`.
+A CSTR system has been implemented along with a Fuzzy PID controller for the same process. The script to train the RL agent to tune the Fuzzy PID is `train_cstr_control.py`. The performance of the trained agent can be evaluated with the accompanying script `test_cstr_control.py`. The entire training and testing pipeline is also available in the `CSTR-Fuzzy.ipynb` notebook.
 
 A PID controller tuned using expert knowledge is available in the the `Paper Reimplementation.ipynb` file. We have compared the performance of the RL Agent vs the expert method in that notebook. The final results are given in the table below. The RL agent achieves competitive performance to the expert method which has complete knowledge of the system parameters.
 
