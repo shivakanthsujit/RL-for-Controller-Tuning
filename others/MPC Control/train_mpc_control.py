@@ -3,11 +3,7 @@ import numpy as np
 import torch
 from mpc_control_env import GymNonLinearTank
 from stable_baselines3 import A2C, PPO
-from stable_baselines3.common.callbacks import (
-    CallbackList,
-    CheckpointCallback,
-    EvalCallback,
-)
+from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback
 from stable_baselines3.common.cmd_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
 
