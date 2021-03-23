@@ -1,6 +1,6 @@
 # RL for Controller Tuning
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/CSTR-Fuzzy.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/blob/master/CSTR-Fuzzy.ipynb)
 
 ## Usage
 
