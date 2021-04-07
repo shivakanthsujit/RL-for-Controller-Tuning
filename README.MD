@@ -1,8 +1,8 @@
 # RL for Controller Tuning
 
-[![Open the Training Notebook In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/blob/master/CSTR-Fuzzy.ipynb)
+Training Notebook: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/blob/master/CSTR-Fuzzy.ipynb)
 
-[![Open the Paper Reimplementation Notebook In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/blob/master/Paper Reimplementation.ipynb)
+Paper Reimplementation Notebook: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](<https://colab.research.google.com/github/shivakanthsujit/RL-for-Controller-Tuning/blob/master/Paper Reimplementation.ipynb>)
 
 ## Usage
 
