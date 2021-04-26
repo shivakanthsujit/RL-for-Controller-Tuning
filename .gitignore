@@ -8,3 +8,6 @@ CSTR/test.ipynb
 .vscode
 tensorboard
 scripts
+logs
+models
+out
