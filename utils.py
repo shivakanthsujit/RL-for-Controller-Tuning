@@ -1,5 +1,6 @@
 import io
 import os
+import random
 
 import cv2
 import gym
@@ -7,6 +8,7 @@ import numpy as np
 from PIL import Image
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.results_plotter import load_results, ts2xy
+import torch
 
 
 def fig2data(fig, dpi=72):
@@ -44,11 +46,6 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
         self.save_path = os.path.join(log_dir, "best_model")
         self.env_save_path = os.path.join(log_dir, "vec_normalize.pkl")
         self.best_mean_reward = -np.inf
-
-    def _init_callback(self) -> None:
-        # Create folder if needed
-        if self.save_path is not None:
-            os.makedirs(self.save_path, exist_ok=True)
 
     def _on_step(self) -> bool:
         if self.n_calls % self.check_freq == 0:
@@ -139,3 +136,14 @@ class ActionRepeat(gym.Wrapper):
             total_reward += reward
             current_step += 1
         return obs, total_reward, done, info
+
+def set_seed(seed_value, use_cuda=True):
+    np.random.seed(seed_value) # cpu vars
+    torch.manual_seed(seed_value) # cpu  vars
+    random.seed(seed_value) # Python
+    os.environ['PYTHONHASHSEED'] = str(seed_value) # Python hash buildin
+    if use_cuda:
+        torch.cuda.manual_seed(seed_value)
+        torch.cuda.manual_seed_all(seed_value) # gpu vars
+        torch.backends.cudnn.deterministic = True  #needed
+        torch.backends.cudnn.benchmark = False

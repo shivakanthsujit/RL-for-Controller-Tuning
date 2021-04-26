@@ -5,3 +5,6 @@ dev
 .tox
 __pycache__
 CSTR/test.ipynb
+.vscode
+tensorboard
+scripts
