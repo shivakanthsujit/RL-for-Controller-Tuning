@@ -11,3 +11,5 @@ scripts
 logs
 models
 out
+plots*/
+metrics/

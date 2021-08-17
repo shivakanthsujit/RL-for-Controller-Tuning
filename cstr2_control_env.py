@@ -1,78 +1,65 @@
-import io
+import matplotlib.pyplot as plt
+import numpy as np
+from numpy.lib.function_base import piecewise
+from scipy.integrate import solve_ivp
 
-import cv2
+from utils import fig2data
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
-import skfuzzy as fuzz
 from control.matlab import *
 from gym import spaces
 from scipy.integrate import solve_ivp
 from simple_pid import PID
 
 
-def fig2data(fig, dpi=72):
-    """
-    @brief Convert a Matplotlib figure to a 4D numpy array with RGBA channels and return it
-    @param fig a matplotlib figure
-    @param dpi DPI of saved image
-    @return a numpy 3D array of RGBA values
-    """
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi)
-    buf.seek(0)
-    img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8)
-    buf.close()
-    img = cv2.imdecode(img_arr, 1)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img
+disturbance = True
+deterministic = False
+regulatory = False
+regulatory_points = [300, 350]
+regulatory_disturbance = 150
+disturbance_value = 20.0
+stable_region=False
+parameter_uncertainity=False
 
-
-def dec_ode(u):
+def dec_ode(Tj):
     def ode_eqn(t, z):
-        qc = u
-        q = 100
-        Cao = 1
-        To = 350
-        Tco = 350
-        V = 100
-        hA = 7e5
-        ko = 7.2e10
-        AE = 1e4
-        delH = 2e5
-        rho = 1e3
-        rhoc = 1e3
-        Cp = 1
-        Cpc = 1
-        Ca = z[0]
-        T = z[1]
-        f1 = (q / V * (Cao - Ca)) - (ko * Ca * np.exp(-AE / T))
-        f2 = (
-            (q / V * (To - T))
-            - ((((-delH) * ko * Ca) / (rho * Cp)) * np.exp(-AE / T))
-            + (((rhoc * Cpc) / (rho * Cp * V)) * qc * (1 - np.exp(-hA / (qc * rho * Cp))) * (Tco - T))
+        Ca0 = 10
+        T0 = 298
+        f = 1
+        E = (11843 * 1.0) if not parameter_uncertainity else (11843 * 1.05)
+        ko = 9703 * 3600
+        H = 5960
+
+        UA = (150 * 1.0) if not parameter_uncertainity else (150 * 0.8)
+        rowCp = 500
+        R = 1.987
+        V = 1
+
+        dz1 = (f / V) * (Ca0 - z[0]) - ko * z[0] * np.exp(-E / (R * z[1]))
+        dz2 = (
+            (f / V) * (T0 - z[1]) + (H / (rowCp)) * ko * z[0] * np.exp(-E / (R * z[1])) - (UA * (1 / rowCp)) * (z[1] - Tj)
         )
-        return [f1, f2]
+        return [dz1, dz2]
 
     return ode_eqn
 
-
 def get_init_states(u):
-    Tbar = 438.86881957
-    ybar = 0.09849321
-    t_span = np.linspace(0, 10, 100)
-    sol = solve_ivp(dec_ode(u), t_span=[t_span[0], t_span[-1]], y0=[ybar, Tbar])
-    return sol.y[0][-1], sol.y[1][-1]
+        Ca = 5.518
+        ybar = 339.1
+        t_span = np.linspace(0, 10, 100)
+        sol = solve_ivp(dec_ode(u), t_span=[t_span[0], t_span[-1]], y0=[Ca, ybar])
+        return sol.y[0][-1], sol.y[1][-1]
 
-
-uinit = 103.0
-umin = 95.0
-umax = 112.0
-Tbar = 438.86881957
-ybar = 0.09849321
-yinit, Tinit = get_init_states(uinit)
-delt = 0.083
-slew_rate = 20.0
+uinit = 298.0
+umin = -1000.0
+umax = 1200.0
+Tbar = 5.443
+ybar = 339.849
+Tinit, yinit = get_init_states(uinit)
+delt = 0.01
+slew_rate = None
+ksp = 100
 
 Kp = 125.0
 taui = 0.3367
@@ -80,11 +67,7 @@ taud = 0.19
 Ki = Kp / taui
 Kd = Kp * taud
 
-disturbance = True
-deterministic = False
-
-
-class CSTR:
+class CSTR2:
     def __init__(
         self,
         uinit=uinit,
@@ -94,11 +77,17 @@ class CSTR:
         ttfinal=None,
         disturbance=disturbance,
         deterministic=deterministic,
+        regulatory=regulatory,
+        regulatory_points = regulatory_points,
+        regulatory_disturbance = regulatory_disturbance,
+        disturbance_value=disturbance_value,
+        stable_region=stable_region,
+        parameter_uncertainity=parameter_uncertainity,
     ):
         # Simulation settings
         self.delt = delt  # sample time
         self.ttfinal = ttfinal  # final simulation time
-        self.ksp = 10
+        self.ksp = ksp
         self.slew_rate = slew_rate
         self.umin = umin
         self.umax = umax
@@ -112,11 +101,17 @@ class CSTR:
 
         self.disturbance = disturbance
         self.deterministic = deterministic
+        self.regulatory = regulatory
+        self.regulatory_points = regulatory_points
+        self.regulatory_disturbance = regulatory_disturbance
+        self.disturbance_value = disturbance_value
+        self.stable_region=stable_region
+        self.parameter_uncertainity = parameter_uncertainity
         self.reset()
 
     @property
     def state_names(self):
-        names = names = ["Setpoint(k)", "Output(k)", "Output(k-1)", "Temp(k)", "Temp(k-1)", "Model Region(k)"]
+        names = names = ["Setpoint(k)", "Output(k)", "Output(k-1)", "Temp(k)", "Temp(k-1)"]
         assert len(names) == self.n_states
         return names
 
@@ -135,26 +130,69 @@ class CSTR:
         return self.input_low.shape[0]
 
     def reset(self):
+        # self.del_indices = [500] # For random figure
+        self.del_indices = [200, 200, 200, 200] # For random figure 2
+        # self.del_indices = [100, 300, 300, 400] # Normal setpoint change
+        self.indices = [self.ksp]
+        for del_index in self.del_indices:
+            self.indices.append(self.indices[-1] + del_index)
+
         if self.deterministic:
-            self.r = np.concatenate(
-                (
-                    np.ones((self.ksp, 1)) * self.yinit,
-                    np.ones((40, 1)) * 0.11038855,
-                    np.ones((30, 1)) * 0.08823159,
-                    np.ones((40, 1)) * 0.09849321,
-                )
-            )
+            if self.stable_region:
+                self.uinit = 295.0
+                self.Tinit, self.yinit = self.get_init_states(self.uinit)
+                # self.setpoints = [self.yinit, 340] # For random figure
+                self.setpoints = [self.yinit, 330.0, 350.0, 340.0, 310.0] # For random figure 2
+                # self.setpoints = [self.yinit, 320.0, 370.0, 350.0, 310.0] # Normal setpoint change
+                # self.setpoints = [self.yinit, 320.0, 385.0, 400.0, 390.0] # For generalization
+            else:
+                # self.setpoints = [self.yinit, 350.0, 370.0, 335.0, 310.0]
+                # self.setpoints = [self.yinit, 340.0] # For random figure
+                self.setpoints = [self.yinit, 345.0, 370.0, 350.0, 310.0] # For random figure 2
+                # self.setpoints = [self.yinit, 345.0, 370.0, 350.0, 310.0] # Normal setpoint change
+                # self.setpoints = [self.yinit, 355.0, 385.0, 400.0, 390.0] # For generalization
         else:
-            self.uinit = np.random.randint(100.0, 106.0)
-            self.yinit, self.Tinit = get_init_states(self.uinit)
-            self.r = np.concatenate(
-                (
-                    np.ones((self.ksp, 1)) * self.yinit,
-                    np.ones((40, 1)) * np.random.uniform(0.07, 0.13),
-                    np.ones((30, 1)) * np.random.uniform(0.07, 0.13),
-                    np.ones((40, 1)) * np.random.uniform(0.07, 0.13),
-                )
-            )
+            self.uinit = np.random.randint(290.0, 301.0)
+            self.Tinit, self.yinit = self.get_init_states(self.uinit)
+            # self.setpoints = [self.yinit, 340.0] # For random figure
+            self.setpoints = [self.yinit, 335.0, 365.0, 350.0, 315.0]
+            self.setpoints += np.random.uniform(-5.0, 5.0, len(self.setpoints))
+
+        self.setpoint_indices = [self.ksp] + self.del_indices
+
+        assert len(self.setpoints) == len(self.setpoint_indices)
+
+        self.r = np.concatenate([np.ones((self.setpoint_indices[i], 1)) * self.setpoints[i] for i in range(len(self.setpoint_indices))])
+
+        # if self.deterministic:
+        #     self.r = np.concatenate(
+        #         (
+        #             np.ones((self.ksp, 1)) * self.yinit,
+        #             np.ones((100, 1)) * 345.0,
+        #             np.ones((300, 1)) * 370.0,
+        #             np.ones((300, 1)) * 350.0,
+        #             np.ones((400, 1)) * 310.0,
+        #         )
+        #     )
+        #     if self.regulatory:
+        #         self.r = np.concatenate(
+        #             (
+        #                 np.ones((self.ksp, 1)) * self.yinit,
+        #                 np.ones((400, 1)) * 345.0,
+        #             )
+        #         )
+        # else:
+        #     self.uinit = np.random.randint(290.0, 301.0)
+        #     self.Tinit, self.yinit = CSTR2.get_init_states(self.uinit)
+        #     self.r = np.concatenate(
+        #         (
+        #             np.ones((self.ksp, 1)) * self.yinit,
+        #             np.ones((100, 1)) * (335.0 + np.random.uniform(-5.0, 5.0)),
+        #             np.ones((300, 1)) * (365.0 + np.random.uniform(-5.0, 5.0)),
+        #             np.ones((300, 1)) * (350.0 + np.random.uniform(-5.0, 5.0)),
+        #             np.ones((400, 1)) * (315.0 + np.random.uniform(-5.0, 5.0)),
+        #         )
+        #     )
         sim_time = len(self.r) * self.delt
         self.ttfinal = self.ttfinal if self.ttfinal is not None and self.ttfinal < sim_time else sim_time
         self.tt = np.arange(0, self.ttfinal, self.delt)  # time vector
@@ -185,48 +223,37 @@ class CSTR:
         # Error vector
         self.E = np.zeros((self.kfinal, 1))
         # State Vector
-        self.x = [self.yinit, self.Tinit]
-        # Model Vector
-        self.m = np.zeros((self.kfinal + 1, 1))
-        self.m[: self.ksp] = np.ones((self.ksp, 1)) * self.get_model_region()
+        self.x = [self.Tinit, self.yinit]
         return self.r[self.k][0], self.y[self.k][0]
 
-    def dec_ode(self, u):
+    def dec_ode(self, Tj, T0=298):
         def ode_eqn(t, z):
-            qc = u
-            q = 100.0
-            Cao = 1.0
-            To = 350.0
-            Tco = 350.0
-            V = 100.0
-            hA = 7e5
-            ko = 7.2e10
-            AE = 1e4
-            delH = 2e5
-            rho = 1e3
-            rhoc = 1e3
-            Cp = 1.0
-            Cpc = 1.0
-            Ca = z[0]
-            T = z[1]
-            Ca = np.maximum(1e-6, Ca)
-            T = np.maximum(10, T)
-            qc = np.maximum(1e-4, qc)
-            try:
-                f1 = (q / V * (Cao - Ca)) - (ko * Ca * np.exp(-AE / T))
-                f2 = (
-                    (q / V * (To - T))
-                    - ((((-delH) * ko * Ca) / (rho * Cp)) * np.exp(-AE / T))
-                    + (((rhoc * Cpc) / (rho * Cp * V)) * qc * (1 - np.exp(-hA / (qc * rho * Cp))) * (Tco - T))
-                )
-            except RuntimeWarning:
-                print("qc: ", qc)
-                print("Ca: ", Ca)
-                print("T: ", T)
-                raise RuntimeError
-            return [f1, f2]
+            Ca0 = 10
+
+            f = 1
+            E = (11843 * 1.0) if not self.parameter_uncertainity else (11843 * 1.05)
+            ko = 9703 * 3600
+            H = 5960
+
+            UA = (150 * 1.0) if not self.parameter_uncertainity else (150 * 0.8)
+            rowCp = 500
+            R = 1.987
+            V = 1
+
+            dz1 = (f / V) * (Ca0 - z[0]) - ko * z[0] * np.exp(-E / (R * z[1]))
+            dz2 = (
+                (f / V) * (T0 - z[1]) + (H / (rowCp)) * ko * z[0] * np.exp(-E / (R * z[1])) - (UA * (1 / rowCp)) * (z[1] - Tj)
+            )
+            return [dz1, dz2]
 
         return ode_eqn
+
+    def get_init_states(self, u):
+        Ca = 5.518
+        ybar = 339.1
+        t_span = np.linspace(0, 10, 100)
+        sol = solve_ivp(self.dec_ode(u), t_span=[t_span[0], t_span[-1]], y0=[Ca, ybar])
+        return sol.y[0][-1], sol.y[1][-1]
 
     def step_env(self, u):
         self.E[self.k] = self.r[self.k][0] - self.y[self.k][0]
@@ -234,18 +261,19 @@ class CSTR:
         if self.slew_rate:
             u = np.clip(u, self.u[self.k - 1] - self.slew_rate, self.u[self.k - 1] + self.slew_rate)
         # Disturbance
-        d = 0.9 * np.random.randn() if self.disturbance else 0.0
+        d = self.disturbance_value * np.random.randn() if self.disturbance else 0.0
         self.u[self.k] = u + d
         # Control Constraints
         self.u[self.k] = np.clip(self.u[self.k], self.umin, self.umax)
         # Solve ODE and update state vector and output vector
-        sol = solve_ivp(self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], self.x)
+        if self.regulatory and self.regulatory_points[0] < self.k < self.regulatory_points[1]:
+            sol = solve_ivp(self.dec_ode(self.u[self.k], T0=298+self.regulatory_disturbance), [self.tinitial, self.tfinal], self.x)
+        else:
+            sol = solve_ivp(self.dec_ode(self.u[self.k]), [self.tinitial, self.tfinal], self.x)
         self.x[0] = sol.y[0][-1]
         self.x[1] = sol.y[1][-1]
-        self.y[self.k + 1] = self.x[0]
-        self.T[self.k + 1] = self.x[1]
-        # Current model region
-        self.m[self.k] = self.get_model_region()
+        self.T[self.k + 1] = self.x[0]
+        self.y[self.k + 1] = self.x[1]
         # Update time and sampling instant
         self.tinitial = self.tfinal
         self.tfinal += self.delt
@@ -263,7 +291,6 @@ class CSTR:
             self.y[self.k - 1][0] - ybar,
             self.T[self.k][0] - Tbar,
             self.T[self.k - 1][0] - Tbar,
-            self.m[self.k - 1][0],
         )
 
     def get_axis(self, use_sample_instant=True):
@@ -271,7 +298,7 @@ class CSTR:
         axis_name = "Time (min)"
         if use_sample_instant:
             axis = np.arange(self.k)
-            axis_name = "Sampling Instants (x0.083min)"
+            axis_name = "Sampling Instants"
         return axis, axis_name
 
     def plot(self, save=False, use_sample_instant=True):
@@ -280,11 +307,10 @@ class CSTR:
         plt.subplot(4, 1, 1)
         plt.step(axis, self.r[: self.k], linestyle="dashed", label="Setpoint", where="post")
         plt.plot(axis, self.y[: self.k], label="Plant Output")
-        plt.ylabel("Concentration Ca (mol/l)")
+        plt.ylabel("Reactor Temperature Tr (K)")
         plt.xlabel(axis_name)
         ise = f"{self.ise():.3e}"
-        piecewise_ise = "{:.3e}, {:.3e}, {:.3e}".format(*self.get_piecewise_ise())
-        title = f"ISE: {ise}, Piecewise ISE: {piecewise_ise}"
+        title = f"ISE: {ise}"
         plt.title(title)
         plt.xlim(axis[0], axis[-1])
         plt.grid()
@@ -292,7 +318,7 @@ class CSTR:
 
         plt.subplot(4, 1, 2)
         plt.step(axis, self.u[: self.k], label="Control Input", where="post")
-        plt.ylabel("Coolant Flowrate qc (l/min)")
+        plt.ylabel("Jacket Temperature Tj (K)")
         plt.xlabel(axis_name)
         plt.title("Control Action")
         plt.xlim(axis[0], axis[-1])
@@ -300,10 +326,10 @@ class CSTR:
         plt.legend()
 
         plt.subplot(4, 1, 3)
-        plt.step(axis, self.T[: self.k], label="Temperature", where="post")
-        plt.ylabel("Temperature T (K)")
+        plt.step(axis, self.T[: self.k], label="Concentration", where="post")
+        plt.ylabel("Concentration Ca (mol/l)")
         plt.xlabel(axis_name)
-        plt.title("Temperature")
+        plt.title("Concentration")
         plt.xlim(axis[0], axis[-1])
         plt.grid()
         plt.legend()
@@ -323,49 +349,29 @@ class CSTR:
             plt.close()
             return img
 
-    def get_model_region(self):
-        m_values = np.linspace(-0.2, 0.2, 6)
-        m = m_values[0]
-        if self.u[self.k] >= 97.0 and self.u[self.k] <= 100.0:
-            m = m_values[1]
-        elif self.u[self.k] > 100.0 and self.u[self.k] <= 103.0:
-            m = m_values[2]
-        elif self.u[self.k] > 103.0 and self.u[self.k] <= 106.0:
-            m = m_values[3]
-        elif self.u[self.k] > 106.0 and self.u[self.k] <= 109.0:
-            m = m_values[4]
-        elif self.u[self.k] > 109.0:
-            m = m_values[5]
-        return m
-
-    def plot_model_regions(self, use_sample_instant=True):
-        axis, axis_name = self.get_axis(use_sample_instant)
-        plt.figure(figsize=(12, 6))
-        plt.plot(axis, self.m[: self.k])
-        plt.title("Model Region")
-        plt.xlabel(axis_name)
-        plt.ylabel("Linear Region Number")
-        plt.xlim(axis[0], axis[-1])
-        plt.grid()
-        plt.show()
-
     def ise(self):
         return ((self.r[: self.k] - self.y[: self.k]) ** 2).sum()
 
     def get_piecewise_ise(self):
-        return (
-            ((self.r[10:50] - self.y[10:50]) ** 2).sum(),
-            ((self.r[50:80] - self.y[50:80]) ** 2).sum(),
-            ((self.r[80:120] - self.y[80:120]) ** 2).sum(),
-        )
+        indices = [x_ for x_ in self.indices if x_ <= self.k] + [self.k]
+        piecewise = [((self.r[indices[i]:indices[i+1]] - self.y[indices[i]:indices[i+1]]) ** 2).sum() for i in range(len(indices)-1)]
+        return piecewise
+
+    def iae(self):
+        return abs(self.r[: self.k] - self.y[: self.k]).sum()
+
+    def get_piecewise_iae(self):
+        indices = [x_ for x_ in self.indices if x_ <= self.k] + [self.k]
+        piecewise = [abs(self.r[indices[i]:indices[i+1]] - self.y[indices[i]:indices[i+1]]).sum() for i in range(len(indices)-1)]
+        return piecewise
 
 
-lamda = 0.5
+lamda = 1.0
 min_gains = [0.0, 0.0, 0.0]
-max_gains = [140.0 / lamda, 2.0, 2.0]
+max_gains = [100.0 / lamda, 2.0, 2.0]
 
 
-class CSTRPID(CSTR):
+class CSTR2PID(CSTR2):
     @property
     def input_names(self):
         return ["Kp(k)", "Ki(k)", "Kd(k)"]
@@ -433,90 +439,19 @@ class CSTRPID(CSTR):
             plt.legend()
 
 
-class CSTRFuzzyPID(CSTRPID):
-    @property
-    def state_names(self):
-        names = names = ["Very Low(k)", "Low(k)", "Medium(k)", "High(k)", "Very High(k)"]
-        assert len(names) == self.n_states
-        return names
-
-    @property
-    def n_states(self):
-        return len(self.get_state())
-
-    def reset_input(self):
-        self.q_range = np.arange(97, 109, 0.001)
-        # Generate fuzzy membership functions
-        very_low = fuzz.trimf(self.q_range, [97, 97, 100])
-        low = fuzz.trimf(self.q_range, [97, 100, 103])
-        medium = fuzz.trimf(self.q_range, [100, 103, 106])
-        high = fuzz.trimf(self.q_range, [103, 106, 109])
-        very_high = fuzz.trimf(self.q_range, [106, 109, 109])
-        self.membership_fns = [very_low, low, medium, high, very_high]
-        return super().reset_input()
-
-    def fuzzify(self, u):
-        u = np.clip(u, self.q_range[0], self.q_range[-1])
-        fuzzy_values = np.array([fuzz.interp_membership(self.q_range, self.membership_fns[i], u) for i in range(5)])
-        return fuzzy_values
-
-    def get_state(self):
-        u = self.u[self.k - 1][0]
-        state = self.fuzzify(u)
-        return state
-
-
-class CSTRFuzzyPID2(CSTRFuzzyPID):
-    def get_state(self):
-        state = super().get_state()
-        state -= 0.5
-        return state
-
-
-class CSTRFuzzyPID3(CSTRPID):
-    @property
-    def state_names(self):
-        names = names = ["M1(k)", "M2(k)", "M3(k)", "M4(k)"]
-        assert len(names) == self.n_states
-        return names
-
-    @property
-    def n_states(self):
-        return len(self.get_state())
-
-    def reset_input(self):
-        self.q_range = np.arange(95, 113, 0.001)
-        # Generate fuzzy membership functions
-        m1 = fuzz.trapmf(self.q_range, [95, 95, 106.2, 107.4])
-        m2 = fuzz.trimf(self.q_range, [106.2, 107.4, 108])
-        m3 = fuzz.trimf(self.q_range, [107.4, 108, 109.2])
-        m4 = fuzz.trapmf(self.q_range, [108, 109.2, 113, 113])
-        self.membership_fns = [m1, m2, m3, m4]
-        return super().reset_input()
-
-    def fuzzify(self, u):
-        u = np.clip(u, self.q_range[0], self.q_range[-1])
-        fuzzy_values = np.array(
-            [fuzz.interp_membership(self.q_range, self.membership_fns[i], u) for i in range(len(self.membership_fns))]
-        )
-        return fuzzy_values
-
-    def get_state(self):
-        u = self.u[self.k - 1][0]
-        state = self.fuzzify(u)
-        state -= 0.5
-        return state
-
-
-class GymCSTR(gym.Env):
+class GymCSTR2(gym.Env):
     def __init__(
         self,
         uinit=uinit,
         Tinit=Tinit,
         yinit=yinit,
-        system=CSTRPID,
+        system=CSTR2PID,
         disturbance=disturbance,
         deterministic=deterministic,
+        regulatory=regulatory,
+        disturbance_value=disturbance_value,
+        stable_region=stable_region,
+        parameter_uncertainity=parameter_uncertainity
     ):
         super().__init__()
         self.uinit = uinit
@@ -524,6 +459,10 @@ class GymCSTR(gym.Env):
         self.yinit = yinit
         self.disturbance = disturbance
         self.deterministic = deterministic
+        self.regulatory=regulatory
+        self.disturbance_value=disturbance_value
+        self.stable_region=stable_region
+        self.parameter_uncertainity = parameter_uncertainity
 
         self.system = system(
             uinit=self.uinit,
@@ -531,6 +470,10 @@ class GymCSTR(gym.Env):
             yinit=self.yinit,
             disturbance=self.disturbance,
             deterministic=self.deterministic,
+            regulatory=self.regulatory,
+            disturbance_value=self.disturbance_value,
+            stable_region=self.stable_region,
+            parameter_uncertainity=self.parameter_uncertainity,
         )
 
         self.n_actions = self.system.n_actions
@@ -569,10 +512,10 @@ class GymCSTR(gym.Env):
         obs = self.system.step(*action)
         # Calculate error and reward
         e = obs[0] - obs[1]
-        scale = 15.0
+        scale = 0.001
         e_squared = scale * np.abs(e) ** 2
-        e_squared = np.minimum(e_squared, 10.0)
-        tol = (0.1 - np.abs(e)) if np.abs(e) <= 5e-4 else 0.0
+        e_squared = np.minimum(e_squared, 5.0)
+        tol = (2.0 - np.abs(e)) if np.abs(e) <= 1e-2 else 0.0
         reward = -e_squared + tol
         done = bool(self.system.k == self.system.kfinal - 1)
         info = {}
@@ -588,12 +531,3 @@ class GymCSTR(gym.Env):
 
     def close(self):
         pass
-
-
-# env_name = "CSTRPID-v0"
-# if env_name in gym.envs.registry.env_specs:
-#     del gym.envs.registry.env_specs[env_name]
-# gym.envs.register(
-#     id=env_name,
-#     entry_point="cstr_control_env:GymCSTR",
-# )
